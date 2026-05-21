@@ -1,35 +1,47 @@
 package com.smartorder.config;
 
+import com.couchbase.client.core.env.PasswordAuthenticator;
+import com.couchbase.client.core.env.SaslMechanism;
+import com.couchbase.client.java.Bucket;
+import com.couchbase.client.java.Cluster;
+import com.couchbase.client.java.ClusterOptions;
+import com.couchbase.client.java.Collection;
+import com.couchbase.client.java.env.ClusterEnvironment;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.data.couchbase.config.AbstractCouchbaseConfiguration;
-import org.springframework.data.couchbase.repository.config.EnableCouchbaseRepositories;
+
+import java.util.Set;
 
 @Configuration
-@EnableCouchbaseRepositories(basePackages = "com.smartorder.repository")
-public class CouchbaseConfig extends AbstractCouchbaseConfiguration {
+public class CouchbaseConfig {
 
-    @Override
-    public String getConnectionString() {
-        return "127.0.0.1";
+    @Bean
+    public ClusterEnvironment couchbaseClusterEnvironment() {
+        return ClusterEnvironment.builder().build();
     }
 
-    @Override
-    public String getUserName() {
-        return "Administrator";
+    @Bean(destroyMethod = "disconnect")
+    public Cluster couchbaseCluster(ClusterEnvironment env) {
+        PasswordAuthenticator authenticator = PasswordAuthenticator
+                .builder()
+                .allowedSaslMechanisms(Set.of(SaslMechanism.PLAIN))
+                .build();
+
+        return Cluster.connect(
+                "127.0.0.1",
+                ClusterOptions
+                        .clusterOptions(authenticator)
+                        .environment(env)
+        );
     }
 
-    @Override
-    public String getPassword() {
-        return "password123";
+    @Bean
+    public Bucket couchbaseBucket(Cluster cluster) {
+        return cluster.bucket("smartorder-core");
     }
 
-    @Override
-    public String getBucketName() {
-        return "smartorder-core";
-    }
-
-    @Override
-    public boolean autoIndexCreation() {
-        return true;
+    @Bean
+    public Collection couchbaseCollection(Bucket bucket) {
+        return bucket.defaultCollection();
     }
 }
