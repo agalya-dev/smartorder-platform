@@ -16,18 +16,6 @@ import java.util.Set;
 @Configuration(proxyBeanMethods = false)
 public class CouchbaseConfig {
 
-    @Value("${spring.couchbase.connection-string}")
-    private String connectionString;
-
-    @Value("${spring.couchbase.username}")
-    private String username;
-
-    @Value("${spring.couchbase.password}")
-    private String password;
-
-    @Value("${spring.data.couchbase.bucket-name}")
-    private String bucketName;
-
     @Bean
     public ClusterEnvironment couchbaseClusterEnvironment() {
         return ClusterEnvironment.builder().build();
@@ -39,8 +27,6 @@ public class CouchbaseConfig {
             @Value("${spring.couchbase.connection-string}") String conn,
             @Value("${spring.couchbase.username}") String user,
             @Value("${spring.couchbase.password}") String pass) {
-
- 
 
         PasswordAuthenticator authenticator = PasswordAuthenticator
                 .builder()
