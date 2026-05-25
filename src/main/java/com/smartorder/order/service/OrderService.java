@@ -1,11 +1,15 @@
 package com.smartorder.order.service;
 
 import com.couchbase.client.java.json.JsonObject;
+import com.smartorder.currency.ConversionResult;
+import com.smartorder.currency.CurrencyConverter;
 import com.smartorder.exception.OrderNotFoundException;
 import com.smartorder.order.repository.OrderRepository;
 import com.smartorder.order.request.OrderRequest;
 import com.smartorder.order.response.OrderResponse;
 import com.smartorder.order.validator.OrderValidator;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -15,15 +19,24 @@ import java.util.UUID;
 @Service
 public class OrderService {
 
+    private static final Logger log =
+            LoggerFactory.getLogger(OrderService.class);
+
     @Autowired
     private OrderRepository orderRepository;
 
     @Autowired
     private OrderValidator orderValidator;
 
+    @Autowired
+    private CurrencyConverter currencyConverter;
+
     // ── Create Order ───────────────────────────────────────────
 
     public OrderResponse createOrder(OrderRequest request) {
+
+        log.info("Creating order for user: {}",
+                request.getUserName());
 
         // Step 1 — Validate request
         orderValidator.validate(request);
@@ -35,11 +48,20 @@ public class OrderService {
                 .toString().substring(0, 8).toUpperCase();
         String documentKey = "ORDER::" + orderId;
 
-        // Step 3 — Build description from template
-        String description = buildDescription(
-                request, orderId);
+        // Step 3 — Convert currency to SEK
+        ConversionResult conversion = currencyConverter
+                .convertToSEK(request.getAmount(),
+                        request.getCurrency());
 
-        // Step 4 — Build Order document
+        log.info("Currency converted: {} {} → {} SEK",
+                request.getAmount(), request.getCurrency(),
+                conversion.getConvertedAmount());
+
+        // Step 4 — Build description from template
+        String description = buildDescription(
+                request, orderId, conversion);
+
+        // Step 5 — Build Order document
         JsonObject doc = JsonObject.create()
                 .put("id", documentKey)
                 .put("orderId", orderId)
@@ -47,26 +69,39 @@ public class OrderService {
                 .put("userId", request.getUserId())
                 .put("userName", request.getUserName())
                 .put("itemCount", request.getItemCount())
-                .put("amount", request.getAmount())
-                .put("currency", request.getCurrency())
+                .put("originalAmount", request.getAmount())
+                .put("originalCurrency", request.getCurrency())
+                .put("convertedAmountInSEK",
+                        conversion.getConvertedAmount())
+                .put("convertedCurrency", "SEK")
+                .put("conversionRate", conversion.getConversionRate())
+                .put("amount", conversion.getConvertedAmount())
+                .put("currency", "SEK")
                 .put("description", description)
                 .put("action", "ORDER_CREATED")
                 .put("status", "NEW")
                 .put("version", 1)
                 .put("timestamp", LocalDateTime.now().toString());
 
-        // Step 5 — Save via repository
+        // Step 6 — Save via repository
         orderRepository.save(documentKey, doc);
 
-        // Step 6 — Return response
+        log.info("Order created successfully: {}", orderId);
+
+        // Step 7 — Return response
         return OrderResponse.builder()
                 .orderId(orderId)
                 .correlationId(correlationId)
                 .userId(request.getUserId())
                 .userName(request.getUserName())
                 .itemCount(request.getItemCount())
-                .amount(request.getAmount())
-                .currency(request.getCurrency())
+                .originalAmount(request.getAmount())
+                .originalCurrency(request.getCurrency())
+                .convertedAmountInSEK(conversion.getConvertedAmount())
+                .convertedCurrency("SEK")
+                .conversionRate(conversion.getConversionRate())
+                .amount(conversion.getConvertedAmount())
+                .currency("SEK")
                 .description(description)
                 .action("ORDER_CREATED")
                 .status("NEW")
@@ -79,6 +114,9 @@ public class OrderService {
     // ── Get Order ──────────────────────────────────────────────
 
     public OrderResponse getOrder(String orderId) {
+
+        log.info("Fetching order: {}", orderId);
+
         String documentKey = "ORDER::" + orderId;
         try {
             JsonObject doc = orderRepository
@@ -92,6 +130,9 @@ public class OrderService {
     // ── Cancel Order ───────────────────────────────────────────
 
     public OrderResponse cancelOrder(String orderId) {
+
+        log.info("Cancelling order: {}", orderId);
+
         String documentKey = "ORDER::" + orderId;
         try {
             JsonObject doc = orderRepository
@@ -103,6 +144,8 @@ public class OrderService {
             doc.put("updatedAt", LocalDateTime.now().toString());
 
             orderRepository.save(documentKey, doc);
+
+            log.info("Order cancelled: {}", orderId);
             return mapToResponse(doc);
         } catch (OrderNotFoundException e) {
             throw e;
@@ -113,8 +156,8 @@ public class OrderService {
 
     // ── Helper — Build description ─────────────────────────────
 
-    private String buildDescription(
-            OrderRequest request, String orderId) {
+    private String buildDescription(OrderRequest request,
+                                    String orderId, ConversionResult conversion) {
         try {
             JsonObject template = orderRepository
                     .getOrderTemplate();
@@ -122,13 +165,22 @@ public class OrderService {
             String descTemplate = template
                     .getString("descriptionTemplate");
 
-            return descTemplate
+            String description = descTemplate
                     .replace("#{orderId}", orderId)
                     .replace("#{userName}", request.getUserName())
                     .replace("#{itemCount}",
                             String.valueOf(request.getItemCount()))
                     .replace("#{amount}",
                             String.valueOf(request.getAmount()));
+
+            // Add conversion info if currency is not SEK
+            if (!"SEK".equalsIgnoreCase(request.getCurrency())) {
+                description += " (converted to SEK "
+                        + conversion.getConvertedAmount() + ")";
+            }
+
+            return description;
+
         } catch (Exception e) {
             return "Order " + orderId
                     + " created by " + request.getUserName();
@@ -144,6 +196,15 @@ public class OrderService {
                 .userId(doc.getString("userId"))
                 .userName(doc.getString("userName"))
                 .itemCount(doc.getInt("itemCount"))
+                .originalAmount(doc.getDouble("originalAmount") != null
+                        ? doc.getDouble("originalAmount") : 0.0)
+                .originalCurrency(doc.getString("originalCurrency"))
+                .convertedAmountInSEK(
+                        doc.getDouble("convertedAmountInSEK") != null
+                                ? doc.getDouble("convertedAmountInSEK") : 0.0)
+                .convertedCurrency(doc.getString("convertedCurrency"))
+                .conversionRate(doc.getDouble("conversionRate") != null
+                        ? doc.getDouble("conversionRate") : 1.0)
                 .amount(doc.getDouble("amount"))
                 .currency(doc.getString("currency"))
                 .description(doc.getString("description"))

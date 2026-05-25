@@ -1,4 +1,4 @@
-package com.smartorder.order.response;
+package com.smartorder.payment.response;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -11,22 +11,24 @@ import java.time.LocalDateTime;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class OrderResponse {
+public class PaymentResponse {
 
+    private String paymentId;
     private String orderId;
     private String correlationId;
     private String userId;
     private String userName;
-    private int itemCount;
     private double amount;
     private String currency;
+    private String paymentMethod;
     private String description;
     private String action;
     private String status;
+    private int attemptCount;
+    private String failureReason;
     private int version;
     private LocalDateTime timestamp;
 
-    // Currency conversion fields
     private String originalCurrency;
     private double originalAmount;
     private String convertedCurrency;

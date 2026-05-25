@@ -1,20 +1,37 @@
-package com.smartorder.order.validator;
+package com.smartorder.payment.validator;
 
 import com.smartorder.exception.ErrorDetail;
 import com.smartorder.exception.ValidationException;
-import com.smartorder.order.request.OrderRequest;
+import com.smartorder.payment.request.PaymentRequest;
 import com.smartorder.util.ValidationUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
 
 @Component
-public class OrderValidator {
+public class PaymentValidator {
 
-    public void validate(OrderRequest request) {
+    private static final Logger log =
+            LoggerFactory.getLogger(PaymentValidator.class);
+
+    public void validate(PaymentRequest request) {
+
+        log.info("Validating payment request for order: {}",
+                request.getOrderId());
 
         List<ErrorDetail> errors = new ArrayList<>();
+
+        // Validate orderId
+        if (ValidationUtil.isNullOrEmpty(request.getOrderId())) {
+            errors.add(ErrorDetail.builder()
+                    .field("orderId")
+                    .message("Order ID is required")
+                    .rejectedValue("null")
+                    .build());
+        }
 
         // Validate userId
         if (ValidationUtil.isNullOrEmpty(request.getUserId())) {
@@ -23,7 +40,8 @@ public class OrderValidator {
                     .message("User ID is required")
                     .rejectedValue("null")
                     .build());
-        } else if (ValidationUtil.exceedsMaxLength(request.getUserId(), 50)) {
+        } else if (ValidationUtil.exceedsMaxLength(
+                request.getUserId(), 50)) {
             errors.add(ErrorDetail.builder()
                     .field("userId")
                     .message("User ID must not exceed 50 characters")
@@ -38,27 +56,6 @@ public class OrderValidator {
                     .message("User name is required")
                     .rejectedValue("null")
                     .build());
-        } else if (ValidationUtil.exceedsMaxLength(request.getUserName(), 100)) {
-            errors.add(ErrorDetail.builder()
-                    .field("userName")
-                    .message("User name must not exceed 100 characters")
-                    .rejectedValue(request.getUserName())
-                    .build());
-        }
-
-        // Validate itemCount
-        if (ValidationUtil.isNullOrZero(request.getItemCount())) {
-            errors.add(ErrorDetail.builder()
-                    .field("itemCount")
-                    .message("Item count is required and must be at least 1")
-                    .rejectedValue(String.valueOf(request.getItemCount()))
-                    .build());
-        } else if (ValidationUtil.exceedsMaxCount(request.getItemCount(), 1000)) {
-            errors.add(ErrorDetail.builder()
-                    .field("itemCount")
-                    .message("Item count cannot exceed 1000")
-                    .rejectedValue(String.valueOf(request.getItemCount()))
-                    .build());
         }
 
         // Validate amount
@@ -68,7 +65,8 @@ public class OrderValidator {
                     .message("Amount is required and must be greater than 0")
                     .rejectedValue(String.valueOf(request.getAmount()))
                     .build());
-        } else if (ValidationUtil.exceedsMaxAmount(request.getAmount(), 999999.99)) {
+        } else if (ValidationUtil.exceedsMaxAmount(
+                request.getAmount(), 999999.99)) {
             errors.add(ErrorDetail.builder()
                     .field("amount")
                     .message("Amount cannot exceed SEK 999,999.99")
@@ -85,19 +83,30 @@ public class OrderValidator {
                     .build());
         }
 
-        // Validate description length if provided
-        if (!ValidationUtil.isNullOrEmpty(request.getDescription()) &&
-                ValidationUtil.exceedsMaxLength(request.getDescription(), 500)) {
+        // Validate paymentMethod
+        if (ValidationUtil.isNullOrEmpty(
+                request.getPaymentMethod())) {
             errors.add(ErrorDetail.builder()
-                    .field("description")
-                    .message("Description must not exceed 500 characters")
-                    .rejectedValue(request.getDescription())
+                    .field("paymentMethod")
+                    .message("Payment method is required")
+                    .rejectedValue("null")
+                    .build());
+        } else if (!ValidationUtil.isValidPaymentMethod(
+                request.getPaymentMethod())) {
+            errors.add(ErrorDetail.builder()
+                    .field("paymentMethod")
+                    .message("Payment method must be CARD, SWISH or INVOICE")
+                    .rejectedValue(request.getPaymentMethod())
                     .build());
         }
 
-        // Throw if any errors found
         if (!errors.isEmpty()) {
+            log.warn("Payment validation failed with {} errors",
+                    errors.size());
             throw new ValidationException(errors);
         }
+
+        log.info("Payment validation passed for order: {}",
+                request.getOrderId());
     }
 }
