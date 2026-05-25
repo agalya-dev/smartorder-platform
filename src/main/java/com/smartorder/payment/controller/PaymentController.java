@@ -1,5 +1,7 @@
 package com.smartorder.payment.controller;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.smartorder.config.IdempotencyService;
 import com.smartorder.exception.ApiResponse;
 import com.smartorder.payment.request.PaymentRequest;
 import com.smartorder.payment.response.PaymentResponse;
@@ -21,26 +23,68 @@ public class PaymentController {
     @Autowired
     private PaymentService paymentService;
 
+    @Autowired
+    private IdempotencyService idempotencyService;
+
+    @Autowired
+    private ObjectMapper objectMapper;
+
     // POST /api/v1/payments — Initiate payment
     @PostMapping
     public ResponseEntity<ApiResponse<PaymentResponse>> initiatePayment(
+            @RequestHeader(value = "X-Idempotency-Key",
+                    required = false) String idempotencyKey,
             @RequestBody PaymentRequest request) {
 
-        log.info("POST /api/v1/payments - Initiate payment " +
-                "for order: {}", request.getOrderId());
+        log.info("POST /api/v1/payments - order: {}",
+                request.getOrderId());
 
-        PaymentResponse response =
-                paymentService.initiatePayment(request);
+        try {
+            // Check idempotency
+            if (idempotencyKey != null &&
+                    idempotencyService.isProcessed(idempotencyKey)) {
+                log.info("Duplicate payment request — " +
+                        "returning cached response: {}", idempotencyKey);
+                String cached = idempotencyService
+                        .getCachedResponse(idempotencyKey);
+                ApiResponse<PaymentResponse> cachedResponse =
+                        objectMapper.readValue(cached,
+                                objectMapper.getTypeFactory()
+                                        .constructParametricType(
+                                                ApiResponse.class,
+                                                PaymentResponse.class));
+                return ResponseEntity.ok(cachedResponse);
+            }
 
-        return ResponseEntity
-                .status(HttpStatus.CREATED)
-                .body(ApiResponse.success(
-                        response,
-                        "Payment initiated successfully",
-                        201));
+            // Process payment
+            PaymentResponse response =
+                    paymentService.initiatePayment(request);
+
+            ApiResponse<PaymentResponse> apiResponse =
+                    ApiResponse.success(
+                            response,
+                            "Payment initiated successfully",
+                            201);
+
+            // Save idempotency key
+            if (idempotencyKey != null) {
+                idempotencyService.save(
+                        idempotencyKey,
+                        objectMapper.writeValueAsString(apiResponse));
+            }
+
+            return ResponseEntity
+                    .status(HttpStatus.CREATED)
+                    .body(apiResponse);
+
+        } catch (Exception e) {
+            log.error("Error initiating payment: {}",
+                    e.getMessage());
+            throw new RuntimeException(e.getMessage());
+        }
     }
 
-    // PUT /api/v1/payments/{paymentId}/confirm — Confirm payment
+    // PUT /api/v1/payments/{paymentId}/confirm
     @PutMapping("/{paymentId}/confirm")
     public ResponseEntity<ApiResponse<PaymentResponse>> confirmPayment(
             @PathVariable String paymentId) {
@@ -57,7 +101,7 @@ public class PaymentController {
                         200));
     }
 
-    // PUT /api/v1/payments/{paymentId}/fail — Fail payment
+    // PUT /api/v1/payments/{paymentId}/fail
     @PutMapping("/{paymentId}/fail")
     public ResponseEntity<ApiResponse<PaymentResponse>> failPayment(
             @PathVariable String paymentId,
@@ -76,7 +120,7 @@ public class PaymentController {
                         200));
     }
 
-    // GET /api/v1/payments/{paymentId} — Get payment
+    // GET /api/v1/payments/{paymentId}
     @GetMapping("/{paymentId}")
     public ResponseEntity<ApiResponse<PaymentResponse>> getPayment(
             @PathVariable String paymentId) {
@@ -93,7 +137,7 @@ public class PaymentController {
                         200));
     }
 
-    // GET /api/v1/payments/health — Health check
+    // GET /api/v1/payments/health
     @GetMapping("/health")
     public ResponseEntity<ApiResponse<String>> health() {
         return ResponseEntity.ok(

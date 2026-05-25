@@ -18,7 +18,13 @@ public class CouchbaseConfig {
 
     @Bean
     public ClusterEnvironment couchbaseClusterEnvironment() {
-        return ClusterEnvironment.builder().build();
+        return ClusterEnvironment.builder()
+                .transactionsConfig(
+                        com.couchbase.client.java.transactions.config
+                                .TransactionsConfig.durabilityLevel(
+                                        com.couchbase.client.core.msg.kv
+                                                .DurabilityLevel.NONE))
+                .build();
     }
 
     @Bean(destroyMethod = "disconnect")
