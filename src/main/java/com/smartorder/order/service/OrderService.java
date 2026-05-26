@@ -17,6 +17,7 @@ import com.smartorder.order.validator.OrderValidator;
 import com.smartorder.status.service.StatusService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import com.smartorder.event.kafka.EventProducer;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -54,6 +55,9 @@ public class OrderService {
 
     @Autowired
     private Cluster couchbaseCluster;
+
+    @Autowired
+    private EventProducer eventProducer;
 
     @Value("${spring.data.couchbase.bucket-name}")
     private String bucketName;
@@ -177,6 +181,14 @@ public class OrderService {
 
         log.info("CB transaction completed for order: {}",
                 orderId);
+
+        // Step 9 — Publish to Kafka async
+        try {
+            eventProducer.publishOrderEvent(orderDoc);
+        } catch (Exception e) {
+            log.warn("Kafka publish failed for order: {} — {}",
+                    orderId, e.getMessage());
+        }
 
         // Step 9 — Return response
         return OrderResponse.builder()

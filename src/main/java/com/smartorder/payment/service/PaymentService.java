@@ -20,6 +20,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import com.smartorder.event.kafka.EventProducer;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -56,6 +57,9 @@ public class PaymentService {
 
     @Autowired
     private Cluster couchbaseCluster;
+
+    @Autowired
+    private EventProducer eventProducer;
 
     @Value("${spring.data.couchbase.bucket-name}")
     private String bucketName;
@@ -169,6 +173,11 @@ public class PaymentService {
             ctx.insert(auditCollection,
                     auditDocument.key, auditDocument.doc);
         });
+        try {
+            eventProducer.publishPaymentEvent(paymentDoc);
+        } catch (Exception e) {
+            log.warn("Kafka publish failed: {}", e.getMessage());
+        }
 
         log.info("Payment initiated: {}", paymentId);
         return mapToResponse(paymentDoc);
@@ -266,11 +275,17 @@ public class PaymentService {
             ctx.insert(auditCollection,
                     auditDocument.key, auditDocument.doc);
         });
+        try {
+            eventProducer.publishPaymentEvent(paymentDoc);
+        } catch (Exception e) {
+            log.warn("Kafka publish failed: {}", e.getMessage());
+        }
 
         log.info("Payment confirmed: {} order: {} CONFIRMED",
                 paymentId, orderId);
         return mapToResponse(paymentDoc);
     }
+
 
     // ── Fail Payment ───────────────────────────────────────────
 
@@ -415,7 +430,11 @@ public class PaymentService {
 
             log.warn("Order {} CANCELLED due to payment failure",
                     orderId);
-
+            try {
+                eventProducer.publishPaymentEvent(paymentDoc);
+            } catch (Exception e) {
+                log.warn("Kafka publish failed: {}", e.getMessage());
+            }
             // Build cancelled response
             PaymentResponse response = mapToResponse(paymentDoc);
             response.setFailureReason(failureReason);
@@ -446,9 +465,15 @@ public class PaymentService {
 
             PaymentResponse response = mapToResponse(paymentDoc);
             response.setFailureReason(failureReason);
+            try {
+                eventProducer.publishPaymentEvent(paymentDoc);
+            } catch (Exception e) {
+                log.warn("Kafka publish failed: {}", e.getMessage());
+            }
             return response;
         }
     }
+
 
     // ── Get Payment ────────────────────────────────────────────
 
