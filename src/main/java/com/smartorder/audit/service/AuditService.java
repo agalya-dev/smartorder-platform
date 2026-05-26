@@ -49,7 +49,8 @@ public class AuditService {
         String paymentId = paymentDoc.getString("paymentId");
         String orderId = paymentDoc.getString("orderId");
         String auditKey = "AUDIT::" + paymentId
-                + "::" + LocalDate.now().toString();
+                + "::" + LocalDateTime.now().toString()
+                .replace(":", "-");
 
         log.info("Preparing audit document: {}", auditKey);
 
