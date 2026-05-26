@@ -28,7 +28,7 @@ public class DataInitializer implements CommandLineRunner {
             Collection collection = couchbaseCluster
                     .bucket(bucketName)
                     .defaultCollection();
-
+            createDefaultUsers(collection);
             createOrderEventTemplate(collection);
             createPaymentEventTemplate(collection);
             createAlertOrderTemplate(collection);
@@ -40,6 +40,54 @@ public class DataInitializer implements CommandLineRunner {
         } catch (Exception e) {
             System.out.println("=== Template initialization skipped: "
                     + e.getMessage() + " ===");
+        }
+    }
+
+    private void createDefaultUsers(Collection collection) {
+        // Admin user
+        createUser(collection,
+                "USR-ADMIN-001", "Admin User",
+                "admin@smartorder.com", "admin123", "ADMIN");
+
+        // Manager user
+        createUser(collection,
+                "USR-MGR-001", "Johan Manager",
+                "manager@smartorder.com", "manager123", "MANAGER");
+
+        // Regular user
+        createUser(collection,
+                "USR-001", "Agalya User",
+                "user@smartorder.com", "user123", "USER");
+    }
+
+    private void createUser(Collection collection,
+                            String userId, String name,
+                            String email, String password, String role) {
+        String key = "USER::" + userId;
+        if (!documentExists(collection, key)) {
+            // Hash password using BCrypt
+            String hashedPassword = org.springframework
+                    .security.crypto.bcrypt.BCryptPasswordEncoder
+                    .class.cast(
+                            new org.springframework.security
+                                    .crypto.bcrypt.BCryptPasswordEncoder())
+                    .encode(password);
+
+            JsonObject doc = JsonObject.create()
+                    .put("id", key)
+                    .put("userId", userId)
+                    .put("name", name)
+                    .put("email", email)
+                    .put("password", hashedPassword)
+                    .put("role", role)
+                    .put("type", "USER")
+                    .put("status", "OFFLINE")
+                    .put("createdAt",
+                            java.time.LocalDateTime.now().toString());
+
+            collection.upsert(key, doc);
+            System.out.println("Created user: "
+                    + userId + " role: " + role);
         }
     }
 
